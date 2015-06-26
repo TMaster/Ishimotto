@@ -67,10 +67,9 @@ namespace Ishimotto.NuGet
                 mNugetRepository.FindPackage(packageID);
 
             var dependencies =
-                from depndency in
-                    GetCompetiblePackagesForAllFrameworks(package) 
-                where DependenciesRepostory.ShouldDownload(depndency)
-                select depndency.ToDto(mNugetRepository);
+                GetCompetiblePackagesForAllFrameworks(package)
+                    .Where( depndency =>  DependenciesRepostory.ShouldDownloadAsync(depndency).Result)
+                    .Select(depndency => depndency.ToDto(mNugetRepository));
 
             var validDependencies = dependencies.Where(d => d != null);
 

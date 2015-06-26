@@ -14,7 +14,7 @@ namespace Ishimotto.NuGet.Dependencies.Repositories
         /// </summary>
         /// <param name="dependency">The dependency to check</param>
         /// <returns>Boolean indicating if <see cref="dependency"/> exists in the repository</returns>
-        bool IsExist(PackageDto dependency);
+        Task<bool> IsExist(PackageDto dependency);
 
         /// <summary>
         /// Adds new depdendencies to the repository
@@ -36,6 +36,6 @@ namespace Ishimotto.NuGet.Dependencies.Repositories
         /// </summary>
         /// <param name="dependency">Dependency to examine</param>
         /// <returns>Boolean indicating if the <see cref="dependency"/></returns>
-        bool ShouldDownload(PackageDependency dependency);
+        Task<bool> ShouldDownloadAsync(PackageDependency dependency);
     }
 }

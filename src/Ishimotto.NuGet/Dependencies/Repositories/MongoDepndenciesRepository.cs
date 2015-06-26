@@ -1,10 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using MongoDB.Bson;
 using MongoDB.Driver;
-using MongoDB.Driver.Builders;
-using MongoDB.Driver.Linq;
 using NuGet;
 
 namespace Ishimotto.NuGet.Dependencies.Repositories
@@ -21,7 +19,7 @@ namespace Ishimotto.NuGet.Dependencies.Repositories
         /// <summary>
         /// repositorie's depdendencies
         /// </summary>
-        private MongoCollection<PackageDto> mDepndencies;
+        private IMongoCollection<PackageDto> mDependencies;
 
         private object mSyncObject = new object();
 
@@ -33,12 +31,10 @@ namespace Ishimotto.NuGet.Dependencies.Repositories
         /// reates new instance of <see cref="MongoDepndenciesRepository"/>
         /// </summary>
         /// <param name="mongoConnection">The connection to the MongoDb</param>
-        public MongoDepndenciesRepository(string mongoConnection,string DbName,string collectionName)
+        public MongoDepndenciesRepository(string mongoConnection, string DbName, string collectionName)
         {
-            mDepndencies =
-                new MongoClient(mongoConnection).GetServer()
-                    .GetDatabase(DbName)
-                    .GetCollection<PackageDto>(collectionName);
+            mDependencies =
+                new MongoClient(mongoConnection).GetDatabase(DbName).GetCollection<PackageDto>(collectionName);
 
         }
 
@@ -47,16 +43,20 @@ namespace Ishimotto.NuGet.Dependencies.Repositories
         #region Public Methods
 
         /// <summary>
-        /// Determines wheter a dependency exist in the repository
+        /// Determines wheter a packages exist in the repository
         /// </summary>
-        /// <param name="dependency">The dependency to check</param>
+        /// <param name="dependency">The packages to check</param>
         /// <returns>Boolean indicating if <see cref="dependency"/> exists in the repository</returns>
-        public bool IsExist(PackageDto dependency)
+        public async Task<bool> IsExist(PackageDto dependency)
         {
-            lock (mSyncObject)
-            {
-                return mDepndencies.Find(Query.EQ("_id", new BsonString(dependency.FormatPackageID()))).Any();
-            }
+            bool result;
+
+            Monitor.Enter(mSyncObject);
+            result = await mDependencies.CountAsync(package => package.MongoID == dependency.MongoID) > 0;
+            Monitor.Exit(mSyncObject);
+
+            return result;
+
         }
 
         /// <summary>
@@ -64,67 +64,36 @@ namespace Ishimotto.NuGet.Dependencies.Repositories
         /// </summary>
         /// <param name="package">item to add</param>
         /// <returns>Task to indicate when the process is completed</returns>
-        public Task AddDependnecyAsync(PackageDto package)
+        public async Task AddDependnecyAsync(PackageDto package)
         {
-            return Task.Run(() =>
-                {
-                    {
-                        var options = new MongoInsertOptions()
-                        {
-                        
-                            Flags = InsertFlags.ContinueOnError,
-                            
-                        };
-                        lock (mSyncObject)
-                        {
-                            mDepndencies.Save(package, options);    
-                        }
-                        
-                    }
-                }
-                );
-
+            await mDependencies.InsertOneAsync(package).ConfigureAwait(false);
         }
+
 
         /// <summary>
         /// Determines whether a depdendency should be download
         /// </summary>
         /// <param name="dependency">Dependency to examine</param>
         /// <returns>Boolean indicating if the <see cref="dependency"/></returns>
-        public bool ShouldDownload(PackageDependency dependency)
+        public async Task<bool> ShouldDownloadAsync(PackageDependency dependency)
         {
-            PackageDto[] ids;
+            var versions = await mDependencies.Find(package => package.ID == dependency.Id).Project(package => package.SemanticVersion).ToListAsync();
 
-            lock (mSyncObject)
-            {
-                //Have to debug this
-                ids = mDepndencies.AsQueryable().Where(package => package.ID == dependency.Id).ToArray();
-            }
-
-            return !ids.Any(package => dependency.VersionSpec.Satisfies(package.SemanticVersion));
+            return versions.Any(version => dependency.VersionSpec.Satisfies(version));
         }
+
+
 
         /// <summary>
         /// Adds new depdendencies to the repository
         /// </summary>
         /// <param name="dependencies">The depdendnecies to the repository</param>
         /// <returns>A task to indicate when the process is done</returns>
-        public Task AddDepndenciesAsync(IEnumerable<PackageDto> dependencies)
+        public async Task AddDepndenciesAsync(IEnumerable<PackageDto> dependencies)
         {
-            return Task.Run(async () =>
-            {
-                //mDepndencies.InsertBatch(dependencies);
-
-                foreach (var dependency in dependencies)
-                {
-                    await AddDependnecyAsync(dependency);
-                }
-
-            });
-
-
+            await mDependencies.InsertManyAsync(dependencies);
+        }
 
         #endregion
-        }
     }
 }
